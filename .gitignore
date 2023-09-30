@@ -1,0 +1,26 @@
+# Devenv
+.devenv*
+devenv.local.nix
+
+# direnv
+.direnv
+.env
+
+# pre-commit
+.pre-commit-config.yaml
+
+# OpenShift installer
+.openshift_install*
+*.tfvars.json
+auth/
+cco_out/
+ccoctl
+credreqs/
+manifests/
+metadata.json
+openshift-install
+terraform.*
+tls/
+
+# Secrets
+secrets/*

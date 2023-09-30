@@ -1,0 +1,82 @@
+version: "3"
+
+dotenv: [".env"]
+
+tasks:
+  configure:
+    cmds:
+      - oc adm release extract $RELEASE_IMAGE --cloud=gcp --credentials-requests --to=./credreqs --registry-config=$PULL_SECRET_PATH
+      - oc adm release extract $RELEASE_IMAGE --command=openshift-install --registry-config=$PULL_SECRET_PATH
+      - PULL_SECRET=$(cat $PULL_SECRET_PATH) envsubst < ./config/install-config.yaml > ./install-config.yaml
+      - ./openshift-install create manifests
+
+  cco:
+    cmds:
+      - oc image extract "{{.CCO_IMAGE}}" --file="/usr/bin/ccoctl" --registry-config=$PULL_SECRET_PATH
+      - chmod 775 ./ccoctl
+    vars:
+      CCO_IMAGE:
+        sh: oc adm release info $RELEASE_IMAGE --image-for=cloud-credential-operator --registry-config=$PULL_SECRET_PATH
+
+  gcp:
+    cmds:
+      - ./ccoctl gcp create-all --name=$NAME --region=$REGION --project=$PROJECT --credentials-requests-dir=./credreqs --output-dir=cco_out
+      - cp ./cco_out/manifests/* ./manifests/
+      - cp -a ./cco_out/tls .
+
+  install:
+    cmds:
+      - ./openshift-install create cluster --log-level=debug
+
+  central:
+    cmds:
+      - ./ccoctl gcp create-service-accounts
+        --credentials-requests-dir=./config/credreqs
+        --name=$NAME
+        --project=$PROJECT
+        --workload-identity-pool=$NAME
+        --workload-identity-provider=$NAME
+      - helm repo add stackrox https://raw.githubusercontent.com/stackrox/helm-charts/main/opensource
+      - helm upgrade --install stackrox-central-services stackrox/stackrox-central-services
+        -n stackrox --create-namespace
+        --set imagePullSecrets.allowNone=true
+        --set central.db.resources.requests.cpu="200m"
+        --set central.db.resources.requests.memory="2Gi"
+        --set central.exposure.route.enabled=true
+        --set central.persistence.none=true
+        --set central.resources.requests.cpu="200m"
+        --set central.resources.requests.memory="2Gi"
+        --version 400.2.0
+      - oc apply -f ./manifests/stackrox-gcp-cloud-credentials-credentials.yaml
+      - oc patch deployment central -n stackrox --patch-file=./config/central-patch.yaml
+    env:
+      KUBECONFIG: ./auth/kubeconfig
+
+  clean:
+    cmds:
+      - rm -rf
+        ./.openshift_install.log
+        ./.openshift_install_state.json
+        ./cco_out
+        ./ccoctl
+        ./credreqs
+        ./install-config.yaml
+        ./manifests
+        ./openshift
+        ./openshift-install
+
+  uninstall:
+    cmds:
+      - ./openshift-install destroy cluster --log-level=debug
+      - ./ccoctl gcp delete --name=$NAME --project=$PROJECT --credentials-requests-dir=./credreqs
+      - ./ccoctl gcp delete
+        --credentials-requests-dir=./config/credreqs
+        --name=$NAME
+        --project=$PROJECT
+
+  default:
+    - task: configure
+    - task: cco
+    - task: gcp
+    - task: install
+    - task: central
