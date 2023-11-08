@@ -1,0 +1,16 @@
+apiVersion: cloudcredential.openshift.io/v1
+kind: CredentialsRequest
+metadata:
+  name: rhacs-central
+  namespace: openshift-cloud-credential-operator
+spec:
+  providerSpec:
+    apiVersion: cloudcredential.openshift.io/v1
+    kind: GCPProviderSpec
+    predefinedRoles:
+      - roles/storage.objectCreator
+  secretRef:
+    name: gcp-cloud-credentials
+    namespace: stackrox
+  serviceAccountNames:
+    - central
